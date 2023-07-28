@@ -1,5 +1,3 @@
-// pages/Deploy.js
-
 'use client';
 
 import { useContext, useEffect, useState } from 'react';
@@ -17,6 +15,12 @@ export default function DeployShelf() {
   const [abi, setAbi] = useState(null);
   const [bytecode, setBytecode] = useState(null);
 
+  // state for shelfAddress in local storage
+  const [shelfAddress, setShelfAddress] = useState(null);
+
+  // state for interestRateModelAddress in local storage
+  const [interestRateModelAddress, setInterestRateModelAddress] = useState(null);
+
   // Fetch the ABI and bytecode on component mount
   useEffect(() => {
     fetch('/solidity/Shelf.sol/Shelf.json')
@@ -29,8 +33,21 @@ export default function DeployShelf() {
 
   }, [account, setValue]);
 
+  // fetch the shelfAddress from local storage
+  useEffect(() => {
+    setShelfAddress(window.localStorage.getItem('shelfAddress'));
+  }, []);
+
+  // fetch the interestRateModelAddress from local storage
+  useEffect(() => {
+    setInterestRateModelAddress(window.localStorage.getItem('interestRateModelAddress'));
+  }, []);
+
   const onSubmit = async (data) => {
     console.log(data); 
+    if (!window) {
+      return;
+    }
   
     if(!abi || !bytecode) {
       console.error('ABI or bytecode is not loaded');
@@ -42,8 +59,9 @@ export default function DeployShelf() {
       const contract = await deployContract(window.ethereum, abi, bytecode, Number(data.margin), data.rateModelAddr);
       console.log('Shelf contract deployed: ', contract);
 
-      let shelfAddress = await contract.getAddress();
-      localStorage.setItem('shelfAddress', shelfAddress);
+      let shelfAddressUpdated = await contract.getAddress();
+      setShelfAddress(shelfAddressUpdated);
+      window.localStorage.setItem('shelfAddress', shelfAddress);
     } catch (error) {
       console.error('Failed to deploy contract:', error);
     }
@@ -62,7 +80,7 @@ export default function DeployShelf() {
 
           <div className={styles.formItem}>
             <label htmlFor="rateModelAddr">Interest Rate Model Address</label>
-            <input id="rateModelAddr" defaultValue={localStorage.getItem('interestRateModelAddress')} {...register("rateModelAddr")} />
+            <input id="rateModelAddr" defaultValue={interestRateModelAddress} {...register("rateModelAddr")} />
           </div>
           <button className={styles.submitButton} type="submit">Deploy</button>
         </form>
