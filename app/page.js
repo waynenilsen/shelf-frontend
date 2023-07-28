@@ -1,95 +1,153 @@
-import Image from 'next/image'
-import styles from './page.module.css'
+// Mint.js
+'use client';
 
-export default function Home() {
-  return (
-    <main className={styles.main}>
-      <div className={styles.description}>
-        <p>
-          Get started by editing&nbsp;
-          <code className={styles.code}>app/page.js</code>
-        </p>
-        <div>
-          <a
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className={styles.vercelLogo}
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+import { useContext, useEffect, useState } from 'react';
+import { useForm } from "react-hook-form";
+import { useRouter } from 'next/navigation';
+import Header from '@/components/Header'; 
+import { BlockchainContext } from '@/components/BlockchainContext';
+import styles from './page.module.css';
+import { createContractInstance } from './blockchain.js';
+import {ethers} from 'ethers';
+
+export default function Shelf() {
+  const { register, handleSubmit, setValue } = useForm();
+  const { account } = useContext(BlockchainContext);
+  const router = useRouter();
+
+  const [abi, setAbi] = useState(null);
+  const [deployedContracts, setDeployedContracts] = useState([]);
+
+  useEffect(() => {
+    fetch('/solidity/Shelf.sol/Shelf.json')
+      .then(response => response.json())
+      .then(data => setAbi(data.abi));
+      
+    if(account) {
+      setValue("_user", account);
+    }
+
+    const contracts = JSON.parse(localStorage.getItem('deployedContracts')) || [];
+    setDeployedContracts(contracts);
+  }, [account, setValue]);
+
+  const createOnSubmit = (index) => {
+    return async (data) => {
+      console.log(data);
+  
+      if(!abi) {
+        console.error('ABI is not loaded');
+        return;
+      }
+  
+      const shelfAddress = localStorage.getItem('shelfAddress');
+      if (!shelfAddress) {
+        console.error('Shelf address is not set');
+        return;
+      }
+  
+  
+      try {
+        const contractInstance = createContractInstance(window.ethereum, abi, shelfAddress);
+  
+        // look up the abi data by function name
+        const abiElement = abi[index];
+        if (!abiElement) {
+          console.error('ABI element not found', index);
+          return;
+        }
+        console.log('abiElement', abiElement);
+  
+        // carefully arrange the input array based on abi input parameter order and the values from the form
+        const args = [];
+        for (let i = 0; i < abiElement.inputs.length; i++) {
+          const input = abiElement.inputs[i];
+          const formData = data[`${index}/${i}`];
+          if (!formData) {
+            console.error('Form data not found', input.name, 'for function', abiElement.name);
+            return;
+          }
+          args.push(formData);
+        }
+        
+        // call the function
+        const tx = await contractInstance[abiElement.name](...args);
+        console.log('tx', tx);
+      } catch (error) {
+        console.error('Failed to call function:', error);
+      }
+    };
+  }
+
+  const createFormInputField = (abiInputParam, funcIndex, argIndex) => {
+    const key = `${funcIndex}/${argIndex}`;
+    // if the name is _token then we want to populate that from deployedContracts
+    if (abiInputParam.name === '_token') {
+      return (
+        <select id={key} {...register(key)}>
+          {deployedContracts.map((address, index) => <option key={index} value={address}>{address}</option>)}
+        </select>
+      )
+    } else if(abiInputParam.name == '_user') {
+      // default to the current account
+      return <input id={key} defaultValue={account} {...register(key)} />;
+    } else if (abiInputParam.name === '_tokenToChange') {
+      return <input id={key} defaultValue={ethers.ZeroAddress} {...register(key)} />;
+    } else if (abiInputParam.name === '_amountToChange') {
+      return <input id={key} defaultValue={0} {...register(key)} />;
+    } else {
+      return <input id={abiInputParam.name} {...register(key)} />;
+    }
+  }
+
+  const createFormItem = (abiInputParam, funcIndex, argIndex) => {
+    if (!abiInputParam.name) {
+      return null;
+    }
+
+    const key = `${funcIndex}/${argIndex}`;
+    return (
+      <div className={styles.formItem} key={key}>
+        <label htmlFor={key}>{abiInputParam.name}</label>
+        { createFormInputField(abiInputParam, funcIndex, argIndex) }
+      </div>
+    )
+  }
+
+  const createAllFormItems = (abiInputs, funcIndex) => {
+    return abiInputs
+      .map((abiInputParam, index) => createFormItem(abiInputParam, funcIndex, index));
+  }
+
+  const createSubForm = (abiElement, index) => {
+    if (!abiElement.name) {
+      return null;
+    }
+    if (abiElement.type !== 'function') {
+      return null;
+    }
+
+    return (
+        <div className={styles.formContainer} key={index}>
+          <h2 className={styles.title}> Call {abiElement.name} </h2>
+            <form onSubmit={handleSubmit(createOnSubmit(index))}>
+              { createAllFormItems(abiElement.inputs, index) }
+              <button className={styles.submitButton} type="submit">Execute</button>
+            </form>
         </div>
-      </div>
+    )
+  }
 
-      <div className={styles.center}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+  const createAllForms = (abiElements) => {
+    return abiElements
+      .map((abiElement, index) => createSubForm(abiElement, index));
+  }
+  
 
-      <div className={styles.grid}>
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Docs <span>-&gt;</span>
-          </h2>
-          <p>Find in-depth information about Next.js features and API.</p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Learn <span>-&gt;</span>
-          </h2>
-          <p>Learn about Next.js in an interactive course with&nbsp;quizzes!</p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Templates <span>-&gt;</span>
-          </h2>
-          <p>Explore the Next.js 13 playground.</p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Deploy <span>-&gt;</span>
-          </h2>
-          <p>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
+  return (
+    <div className="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
+      <Header />
+      {abi ? createAllForms(abi) : null}
+    </div>
   )
 }
